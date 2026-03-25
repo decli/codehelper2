@@ -642,6 +642,7 @@ private fun PickupCodeCard(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun PickupCodeCardBody(
     item: PickupCodeItem,

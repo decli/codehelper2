@@ -9,23 +9,23 @@ import androidx.compose.runtime.Composable
 private val LightColors = lightColorScheme(
     primary = AccentTerracotta,
     onPrimary = CardSurface,
-    primaryContainer = AccentTerracottaContainer,
+    primaryContainer = PendingCardSurface,
     onPrimaryContainer = Ink,
     secondary = AccentBlue,
     onSecondary = CardSurface,
-    secondaryContainer = AccentBlueContainer,
+    secondaryContainer = HeroCool,
     onSecondaryContainer = Ink,
     tertiary = AccentGreen,
     onTertiary = CardSurface,
-    tertiaryContainer = AccentGreenContainer,
+    tertiaryContainer = PickedCardSurface,
     onTertiaryContainer = Ink,
     background = AppBackground,
     surface = CardSurface,
-    surfaceVariant = AppBackgroundShade,
+    surfaceVariant = HeroSurface,
     onSurface = Ink,
     onSurfaceVariant = InkMuted,
     error = AccentTerracotta,
-    errorContainer = AccentTerracottaContainer,
+    errorContainer = PendingCardSurface,
 )
 
 private val DarkColors = darkColorScheme(
@@ -51,4 +51,3 @@ fun CodeHelperTheme(
         content = content,
     )
 }
-

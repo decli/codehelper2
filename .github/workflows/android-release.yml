@@ -97,20 +97,30 @@ jobs:
             - name: Publish release
               uses: softprops/action-gh-release@v2
               with:
-                  tag_name: v1.1.0-build.${{ github.run_number }}
-                  name: "取件码助手 v1.1.0 (Build ${{ github.run_number }})"
+                  tag_name: v2.0.0-build.${{ github.run_number }}
+                  name: "取件码助手 v2.0.0 (Build ${{ github.run_number }})"
                   body: |
-                      ## 取件码助手 (CodeHelper)
+                      ## 取件码助手 (CodeHelper) v2.0.0
 
                       自动编译构建，commit ${{ github.sha }}
+
+                      ### v2.0.0 更新内容
+                      - 全新 UI 设计：专业级界面，对老人更友好
+                      - 修复左滑「已取件」按钮点击后闪退的严重 bug
+                      - 全新应用图标：快递包裹+取件码标签，一目了然
+                      - 优化时间筛选交互：切换时间范围立即刷新数据
+                      - 已取件/未取件状态管理优化
+                      - 卡片信息展示更完整（状态、时间、取件码、短信内容、命中规则）
+                      - 「强制刷新所有」展示全部取件码（含已取件）
+                      - 规则设置界面优化
 
                       ### 功能特性
                       - 自动读取手机短信，提取取件码
                       - 大字体、高对比度，老人友好界面
                       - 支持时间筛选（12小时/1天/2天/5天）
-                      - 左滑删除取件码，支持恢复显示
+                      - 左滑标记「已取件」，支持恢复
                       - 双击卡片跳转到对应短信
-                      - 自定义取件码提取规则
+                      - 自定义取件码正则提取规则
                       - 完全离线运行，无需联网
 
                       ### 安装说明

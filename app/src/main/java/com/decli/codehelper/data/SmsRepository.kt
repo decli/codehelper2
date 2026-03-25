@@ -74,9 +74,9 @@ class SmsRepository(
             Telephony.TextBasedSmsColumns.DATE,
         )
 
-        // Do NOT filter by TYPE – on some Chinese ROMs, platform messages from
-        // named senders (e.g. "菜鸟驿站") are stored with NULL or non-standard
-        // type values.  In SQL, `NULL NOT IN (…)` evaluates to UNKNOWN (=FALSE),
+        // Do NOT filter by TYPE \u2013 on some Chinese ROMs, platform messages from
+        // named senders (e.g. \u201c\u83dc\u9e1f\u9a7f\u7ad9\u201d) are stored with NULL or non-standard
+        // type values.  In SQL, `NULL NOT IN (\u2026)` evaluates to UNKNOWN (=FALSE),
         // so any TYPE-based exclusion silently drops those rows.  Omitting the
         // filter is safe because the pickup-code regex naturally ignores messages
         // that do not contain a code (e.g. sent / draft messages).
@@ -96,7 +96,7 @@ class SmsRepository(
                 val smsId = cursor.getLong(idIndex)
                 seenMessages += MessageType.Sms to smsId
 
-                val sender = cursor.getString(addressIndex).orEmpty().ifBlank { "短信" }
+                val sender = cursor.getString(addressIndex).orEmpty().ifBlank { "\u77ed\u4fe1" }
                 val body = cursor.getString(bodyIndex).orEmpty()
                 val receivedAt = cursor.getLong(dateIndex)
 
@@ -139,7 +139,7 @@ class SmsRepository(
         // Inference from AOSP TelephonyProvider/Messaging code: MMS date values are stored in seconds.
         val sinceSeconds = sinceMillis / 1000L
 
-        // Same rationale as SMS – do not filter by MESSAGE_BOX to avoid dropping
+        // Same rationale as SMS \u2013 do not filter by MESSAGE_BOX to avoid dropping
         // rows with NULL or vendor-specific box values.
         contentResolver.query(
             Telephony.Mms.CONTENT_URI,
@@ -161,7 +161,7 @@ class SmsRepository(
                 val body = loadMmsBody(mmsId, subject)
                 if (body.isBlank()) continue
 
-                val sender = loadMmsSender(mmsId).ifBlank { "彩信" }
+                val sender = loadMmsSender(mmsId).ifBlank { "\u5f69\u4fe1" }
 
                 appendMatches(
                     results = results,
@@ -188,8 +188,8 @@ class SmsRepository(
     /**
      * Query the unified `content://mms-sms/` provider as a fallback.
      *
-     * On some Chinese ROMs (MIUI, EMUI, ColorOS …) platform messages from
-     * named senders like "菜鸟驿站" may NOT appear in the individual
+     * On some Chinese ROMs (MIUI, EMUI, ColorOS \u2026) platform messages from
+     * named senders like \u201c\u83dc\u9e1f\u9a7f\u7ad9\u201d may NOT appear in the individual
      * `content://sms` or `content://mms` tables but DO appear in the
      * unified conversation view.  This third pass catches those messages.
      *
@@ -251,7 +251,7 @@ class SmsRepository(
                 if (receivedAtMillis < (sinceMillis - 1000L)) continue
 
                 val sender = addressIndex?.let { cursor.getString(it) }.orEmpty().ifBlank {
-                    if (isMms) "彩信" else "短信"
+                    if (isMms) "\u5f69\u4fe1" else "\u77ed\u4fe1"
                 }
 
                 val body: String = if (isMms) {
@@ -478,7 +478,7 @@ private fun Cursor.safeColumnIndex(columnName: String): Int? {
 
 private fun String.compactPreview(maxLength: Int = 78): String {
     val normalized = replace(Regex("""\s+"""), " ").trim()
-    return if (normalized.length <= maxLength) normalized else normalized.take(maxLength - 1) + "…"
+    return if (normalized.length <= maxLength) normalized else normalized.take(maxLength - 1) + "\u2026"
 }
 
 private fun String.normalizePartText(contentType: String): String {

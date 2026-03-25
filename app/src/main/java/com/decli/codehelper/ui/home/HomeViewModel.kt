@@ -50,6 +50,7 @@ class HomeViewModel(
 
     init {
         observeData()
+        observeMiuiHintDismissed()
     }
 
     fun refreshPermissionStatus() {
@@ -131,6 +132,20 @@ class HomeViewModel(
 
     fun resetRulesToDefault() {
         saveRules(PickupCodeExtractor.defaultRules)
+    }
+
+    fun dismissMiuiHint() {
+        viewModelScope.launch {
+            settingsRepository.dismissMiuiHint()
+        }
+    }
+
+    private fun observeMiuiHintDismissed() {
+        viewModelScope.launch {
+            settingsRepository.miuiHintDismissedFlow.collect { dismissed ->
+                uiStateFlow.update { it.copy(miuiHintDismissed = dismissed) }
+            }
+        }
     }
 
     private fun observeData() {

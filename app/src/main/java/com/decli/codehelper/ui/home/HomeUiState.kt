@@ -7,6 +7,7 @@ import com.decli.codehelper.util.PickupCodeExtractor
 data class HomeUiState(
     val hasSmsPermission: Boolean = false,
     val isMiui: Boolean = false,
+    val miuiHintDismissed: Boolean = false,
     val isLoading: Boolean = false,
     val selectedFilter: CodeFilterWindow = CodeFilterWindow.Last12Hours,
     val items: List<PickupCodeItem> = emptyList(),

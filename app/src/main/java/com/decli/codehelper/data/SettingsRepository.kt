@@ -2,6 +2,7 @@ package com.decli.codehelper.data
 
 import android.content.Context
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
@@ -18,6 +19,7 @@ class SettingsRepository(
         val rulesKey = stringPreferencesKey("pickup_rules")
         val pickedUpItemsKey = stringSetPreferencesKey("picked_up_items")
         val legacyDeletedItemsKey = stringSetPreferencesKey("deleted_pickup_items")
+        val miuiHintDismissedKey = booleanPreferencesKey("miui_hint_dismissed")
     }
 
     val rulesFlow: Flow<List<String>> =
@@ -59,6 +61,17 @@ class SettingsRepository(
             current -= uniqueKey
             preferences[pickedUpItemsKey] = current
             preferences.remove(legacyDeletedItemsKey)
+        }
+    }
+
+    val miuiHintDismissedFlow: Flow<Boolean> =
+        context.settingsDataStore.data.map { preferences ->
+            preferences[miuiHintDismissedKey] == true
+        }
+
+    suspend fun dismissMiuiHint() {
+        context.settingsDataStore.edit { preferences ->
+            preferences[miuiHintDismissedKey] = true
         }
     }
 }

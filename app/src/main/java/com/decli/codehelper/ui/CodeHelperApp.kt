@@ -28,7 +28,6 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
@@ -38,9 +37,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Rule
 import androidx.compose.material3.Button
@@ -373,27 +370,21 @@ private fun TimeFilterPanel(
                     DropdownMenu(
                         expanded = showOtherFilters,
                         onDismissRequest = { showOtherFilters = false },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .heightIn(max = 280.dp),
+                        modifier = Modifier.fillMaxWidth(),
                     ) {
-                        Column(
-                            modifier = Modifier.verticalScroll(rememberScrollState()),
-                        ) {
-                            otherFilters.forEach { filter ->
-                                DropdownMenuItem(
-                                    text = {
-                                        Text(
-                                            text = filter.label,
-                                            style = androidx.compose.material3.MaterialTheme.typography.bodyLarge,
-                                        )
-                                    },
-                                    onClick = {
-                                        showOtherFilters = false
-                                        onFilterSelected(filter)
-                                    },
-                                )
-                            }
+                        otherFilters.forEach { filter ->
+                            DropdownMenuItem(
+                                text = {
+                                    Text(
+                                        text = filter.label,
+                                        style = androidx.compose.material3.MaterialTheme.typography.bodyLarge,
+                                    )
+                                },
+                                onClick = {
+                                    showOtherFilters = false
+                                    onFilterSelected(filter)
+                                },
+                            )
                         }
                     }
                 }

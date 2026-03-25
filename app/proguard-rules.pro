@@ -1,9 +1,2 @@
-# Room
--keep class * extends androidx.room.RoomDatabase
--keep @androidx.room.Entity class *
--dontwarn androidx.room.paging.**
+# Intentionally kept minimal for the first release.
 
-# Gson
--keepattributes Signature
--keepattributes *Annotation*
--keep class com.codehelper.app.data.model.** { *; }

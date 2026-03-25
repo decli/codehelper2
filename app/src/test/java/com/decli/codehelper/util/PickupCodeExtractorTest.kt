@@ -68,6 +68,17 @@ class PickupCodeExtractorTest {
     }
 
     @Test
+    fun `extracts code from Cainiao station without quotes`() {
+        val result = extractor.extract(
+            body = "【菜鸟驿站】您的包裹已到站，凭19-3-29025到龙腾苑四区兔喜生活30号楼店取件。",
+            rules = PickupCodeExtractor.defaultRules,
+        )
+
+        assertEquals(listOf("19-3-29025"), result.map { it.code })
+        assertEquals(listOf("命中规则2"), result.map { it.matchedRule })
+    }
+
+    @Test
     fun `extracts code from expanded cargo keywords`() {
         val result = extractor.extract(
             body = "【快递】驿站码“Y0986”，请及时领取。",

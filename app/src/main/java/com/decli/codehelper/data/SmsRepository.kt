@@ -57,9 +57,9 @@ class SmsRepository(
         )
 
         contentResolver.query(
-            Telephony.Sms.Inbox.CONTENT_URI,
+            Telephony.Sms.CONTENT_URI,
             projection,
-            "${Telephony.TextBasedSmsColumns.DATE} >= ?",
+            "${Telephony.TextBasedSmsColumns.DATE} >= ? AND ${Telephony.TextBasedSmsColumns.TYPE} NOT IN ($SMS_TYPE_SENT, $SMS_TYPE_DRAFT, $SMS_TYPE_OUTBOX, $SMS_TYPE_FAILED, $SMS_TYPE_QUEUED)",
             arrayOf(sinceMillis.toString()),
             "${Telephony.TextBasedSmsColumns.DATE} DESC",
         )?.use { cursor ->
@@ -109,9 +109,9 @@ class SmsRepository(
         val sinceSeconds = sinceMillis / 1000L
 
         contentResolver.query(
-            Telephony.Mms.Inbox.CONTENT_URI,
+            Telephony.Mms.CONTENT_URI,
             projection,
-            "${Telephony.BaseMmsColumns.DATE} >= ?",
+            "${Telephony.BaseMmsColumns.DATE} >= ? AND ${Telephony.BaseMmsColumns.MESSAGE_BOX} NOT IN ($MMS_BOX_SENT, $MMS_BOX_DRAFTS, $MMS_BOX_OUTBOX)",
             arrayOf(sinceSeconds.toString()),
             "${Telephony.BaseMmsColumns.DATE} DESC",
         )?.use { cursor ->
@@ -274,6 +274,18 @@ class SmsRepository(
             "application/smil",
             "application/octet-stream",
         )
+
+        // SMS type constants (Telephony.TextBasedSmsColumns.TYPE values)
+        private const val SMS_TYPE_SENT = 2
+        private const val SMS_TYPE_DRAFT = 3
+        private const val SMS_TYPE_OUTBOX = 4
+        private const val SMS_TYPE_FAILED = 5
+        private const val SMS_TYPE_QUEUED = 6
+
+        // MMS message box constants (Telephony.BaseMmsColumns.MESSAGE_BOX values)
+        private const val MMS_BOX_SENT = 2
+        private const val MMS_BOX_DRAFTS = 3
+        private const val MMS_BOX_OUTBOX = 4
 
         fun buildUniqueKey(messageType: MessageType, messageId: Long, code: String): String =
             when (messageType) {

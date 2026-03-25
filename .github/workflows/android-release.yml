@@ -94,10 +94,27 @@ jobs:
                   name: CodeHelper-release-apk
                   path: app/build/outputs/apk/release/*.apk
 
-            - name: Publish tagged release
-              if: startsWith(github.ref, 'refs/tags/')
+            - name: Publish release
               uses: softprops/action-gh-release@v2
               with:
-                  tag_name: ${{ github.ref_name }}
-                  name: ${{ github.ref_name }}
+                  tag_name: v1.1.0-build.${{ github.run_number }}
+                  name: "取件码助手 v1.1.0 (Build ${{ github.run_number }})"
+                  body: |
+                      ## 取件码助手 (CodeHelper)
+
+                      自动编译构建，commit ${{ github.sha }}
+
+                      ### 功能特性
+                      - 自动读取手机短信，提取取件码
+                      - 大字体、高对比度，老人友好界面
+                      - 支持时间筛选（12小时/1天/2天/5天）
+                      - 左滑删除取件码，支持恢复显示
+                      - 双击卡片跳转到对应短信
+                      - 自定义取件码提取规则
+                      - 完全离线运行，无需联网
+
+                      ### 安装说明
+                      下载 APK 文件并安装，首次使用需授权短信读取权限。
                   files: app/build/outputs/apk/release/*.apk
+                  draft: false
+                  prerelease: false

@@ -89,6 +89,7 @@ import com.decli.codehelper.model.CodeFilterWindow
 import com.decli.codehelper.model.PickupCodeItem
 import com.decli.codehelper.ui.home.HomeUiState
 import com.decli.codehelper.ui.home.HomeViewModel
+import com.decli.codehelper.util.MiuiPermissionHelper
 import com.decli.codehelper.ui.theme.AccentBlueContainer
 import com.decli.codehelper.ui.theme.AccentGreen
 import com.decli.codehelper.ui.theme.AccentGreenContainer
@@ -203,6 +204,12 @@ fun CodeHelperApp(
                         onForceRefreshAll = viewModel::forceRefreshAll,
                         onEditRules = { showRuleEditor = true },
                     )
+                }
+
+                if (uiState.isMiui && uiState.hasSmsPermission) {
+                    item {
+                        MiuiServiceSmsHint(context = context)
+                    }
                 }
 
                 when {
@@ -909,6 +916,56 @@ private fun RulesEditorSheet(
             }
 
             Spacer(modifier = Modifier.height(18.dp))
+        }
+    }
+}
+
+@Composable
+private fun MiuiServiceSmsHint(context: Context) {
+    Card(
+        shape = RoundedCornerShape(18.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = Color(0xFFFFF3E0),
+        ),
+        border = BorderStroke(1.dp, Color(0xFFE0A050)),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text(
+                text = "小米手机用户请注意",
+                style = androidx.compose.material3.MaterialTheme.typography.titleMedium,
+                color = Ink,
+                fontWeight = FontWeight.Bold,
+            )
+            Text(
+                text = "如果部分取件码（如菜鸟驿站等平台短信）未显示，" +
+                    "请到权限设置中开启「通知类短信」权限。" +
+                    "小米系统默认关闭该权限，开启后即可正常读取。",
+                style = androidx.compose.material3.MaterialTheme.typography.bodyMedium,
+                color = Ink,
+            )
+            Button(
+                onClick = {
+                    runCatching {
+                        context.startActivity(
+                            MiuiPermissionHelper.buildPermissionEditorIntent(context)
+                                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                        )
+                    }
+                },
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color(0xFFE0A050),
+                    contentColor = Color.White,
+                ),
+            ) {
+                Text(text = "前往权限设置")
+            }
         }
     }
 }

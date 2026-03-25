@@ -2,11 +2,11 @@ package com.decli.codehelper.data
 
 import android.content.ContentResolver
 import android.content.ContentUris
+import android.database.Cursor
 import android.net.Uri
 import android.provider.BaseColumns
 import android.provider.Telephony
 import android.text.Html
-import com.decli.codehelper.model.CodeFilterWindow
 import com.decli.codehelper.model.PickupCodeItem
 import com.decli.codehelper.util.PickupCodeExtractor
 import java.nio.charset.Charset
@@ -17,7 +17,7 @@ class SmsRepository(
     private val extractor: PickupCodeExtractor = PickupCodeExtractor(),
 ) {
     fun loadPickupCodes(
-        filterWindow: CodeFilterWindow,
+        filterWindow: com.decli.codehelper.model.CodeFilterWindow,
         rules: List<String>,
         pickedUpKeys: Set<String>,
         includePickedUp: Boolean,
@@ -25,28 +25,46 @@ class SmsRepository(
     ): List<PickupCodeItem> {
         val sinceMillis = nowMillis - (filterWindow.hours * 60L * 60L * 1000L)
         val results = mutableListOf<PickupCodeItem>()
+        // Track (messageType, messageId) pairs already processed so the unified
+        // provider fallback never duplicates messages already found via the
+        // dedicated SMS / MMS tables.
+        val seenMessages = mutableSetOf<Pair<MessageType, Long>>()
 
         results += loadSmsItems(
             sinceMillis = sinceMillis,
             rules = rules,
             pickedUpKeys = pickedUpKeys,
             includePickedUp = includePickedUp,
+            seenMessages = seenMessages,
         )
         results += loadMmsItems(
             sinceMillis = sinceMillis,
             rules = rules,
             pickedUpKeys = pickedUpKeys,
             includePickedUp = includePickedUp,
+            seenMessages = seenMessages,
+        )
+        results += loadUnifiedItems(
+            sinceMillis = sinceMillis,
+            rules = rules,
+            pickedUpKeys = pickedUpKeys,
+            includePickedUp = includePickedUp,
+            seenMessages = seenMessages,
         )
 
         return sortForDisplay(results)
     }
+
+    // ------------------------------------------------------------------
+    // SMS
+    // ------------------------------------------------------------------
 
     private fun loadSmsItems(
         sinceMillis: Long,
         rules: List<String>,
         pickedUpKeys: Set<String>,
         includePickedUp: Boolean,
+        seenMessages: MutableSet<Pair<MessageType, Long>>,
     ): List<PickupCodeItem> {
         val results = mutableListOf<PickupCodeItem>()
         val projection = arrayOf(
@@ -56,10 +74,16 @@ class SmsRepository(
             Telephony.TextBasedSmsColumns.DATE,
         )
 
+        // Do NOT filter by TYPE \u2013 on some Chinese ROMs, platform messages from
+        // named senders (e.g. \u201c\u83dc\u9e1f\u9a7f\u7ad9\u201d) are stored with NULL or non-standard
+        // type values.  In SQL, `NULL NOT IN (\u2026)` evaluates to UNKNOWN (=FALSE),
+        // so any TYPE-based exclusion silently drops those rows.  Omitting the
+        // filter is safe because the pickup-code regex naturally ignores messages
+        // that do not contain a code (e.g. sent / draft messages).
         contentResolver.query(
             Telephony.Sms.CONTENT_URI,
             projection,
-            "${Telephony.TextBasedSmsColumns.DATE} >= ? AND ${Telephony.TextBasedSmsColumns.TYPE} NOT IN ($SMS_TYPE_SENT, $SMS_TYPE_DRAFT, $SMS_TYPE_OUTBOX, $SMS_TYPE_FAILED, $SMS_TYPE_QUEUED)",
+            "${Telephony.TextBasedSmsColumns.DATE} >= ?",
             arrayOf(sinceMillis.toString()),
             "${Telephony.TextBasedSmsColumns.DATE} DESC",
         )?.use { cursor ->
@@ -70,7 +94,9 @@ class SmsRepository(
 
             while (cursor.moveToNext()) {
                 val smsId = cursor.getLong(idIndex)
-                val sender = cursor.getString(addressIndex).orEmpty().ifBlank { "短信" }
+                seenMessages += MessageType.Sms to smsId
+
+                val sender = cursor.getString(addressIndex).orEmpty().ifBlank { "\u77ed\u4fe1" }
                 val body = cursor.getString(bodyIndex).orEmpty()
                 val receivedAt = cursor.getLong(dateIndex)
 
@@ -92,11 +118,16 @@ class SmsRepository(
         return results
     }
 
+    // ------------------------------------------------------------------
+    // MMS
+    // ------------------------------------------------------------------
+
     private fun loadMmsItems(
         sinceMillis: Long,
         rules: List<String>,
         pickedUpKeys: Set<String>,
         includePickedUp: Boolean,
+        seenMessages: MutableSet<Pair<MessageType, Long>>,
     ): List<PickupCodeItem> {
         val results = mutableListOf<PickupCodeItem>()
         val projection = arrayOf(
@@ -108,10 +139,12 @@ class SmsRepository(
         // Inference from AOSP TelephonyProvider/Messaging code: MMS date values are stored in seconds.
         val sinceSeconds = sinceMillis / 1000L
 
+        // Same rationale as SMS \u2013 do not filter by MESSAGE_BOX to avoid dropping
+        // rows with NULL or vendor-specific box values.
         contentResolver.query(
             Telephony.Mms.CONTENT_URI,
             projection,
-            "${Telephony.BaseMmsColumns.DATE} >= ? AND ${Telephony.BaseMmsColumns.MESSAGE_BOX} NOT IN ($MMS_BOX_SENT, $MMS_BOX_DRAFTS, $MMS_BOX_OUTBOX)",
+            "${Telephony.BaseMmsColumns.DATE} >= ?",
             arrayOf(sinceSeconds.toString()),
             "${Telephony.BaseMmsColumns.DATE} DESC",
         )?.use { cursor ->
@@ -121,12 +154,14 @@ class SmsRepository(
 
             while (cursor.moveToNext()) {
                 val mmsId = cursor.getLong(idIndex)
+                seenMessages += MessageType.Mms to mmsId
+
                 val receivedAtMillis = cursor.getLong(dateIndex) * 1000L
                 val subject = cursor.getString(subjectIndex).orEmpty()
                 val body = loadMmsBody(mmsId, subject)
                 if (body.isBlank()) continue
 
-                val sender = loadMmsSender(mmsId).ifBlank { "彩信" }
+                val sender = loadMmsSender(mmsId).ifBlank { "\u5f69\u4fe1" }
 
                 appendMatches(
                     results = results,
@@ -145,6 +180,110 @@ class SmsRepository(
 
         return results
     }
+
+    // ------------------------------------------------------------------
+    // Unified MMS-SMS provider (fallback)
+    // ------------------------------------------------------------------
+
+    /**
+     * Query the unified `content://mms-sms/` provider as a fallback.
+     *
+     * On some Chinese ROMs (MIUI, EMUI, ColorOS \u2026) platform messages from
+     * named senders like \u201c\u83dc\u9e1f\u9a7f\u7ad9\u201d may NOT appear in the individual
+     * `content://sms` or `content://mms` tables but DO appear in the
+     * unified conversation view.  This third pass catches those messages.
+     *
+     * Messages already found via the dedicated SMS/MMS queries are skipped
+     * using [seenMessages].
+     */
+    private fun loadUnifiedItems(
+        sinceMillis: Long,
+        rules: List<String>,
+        pickedUpKeys: Set<String>,
+        includePickedUp: Boolean,
+        seenMessages: MutableSet<Pair<MessageType, Long>>,
+    ): List<PickupCodeItem> {
+        val results = mutableListOf<PickupCodeItem>()
+
+        // The unified provider stores SMS dates in ms, MMS dates in seconds.
+        // We filter by the SMS-style ms date; MMS rows whose date-in-seconds
+        // is < sinceMillis will pass the SQL filter but we re-check in code.
+        val projection = arrayOf(
+            BaseColumns._ID,
+            // "transport_type" is the standard MmsSms discriminator column.
+            // It holds "sms" or "mms".
+            Telephony.MmsSms.TYPE_DISCRIMINATOR_COLUMN,
+            Telephony.TextBasedSmsColumns.ADDRESS,
+            Telephony.TextBasedSmsColumns.BODY,
+            Telephony.TextBasedSmsColumns.DATE,
+        )
+
+        runCatching {
+            contentResolver.query(
+                UNIFIED_URI,
+                projection,
+                "${Telephony.TextBasedSmsColumns.DATE} >= ?",
+                arrayOf(sinceMillis.toString()),
+                "${Telephony.TextBasedSmsColumns.DATE} DESC",
+            )
+        }.getOrNull()?.use { cursor ->
+            val idIndex = cursor.safeColumnIndex(BaseColumns._ID) ?: return@use
+            val transportIndex = cursor.safeColumnIndex(Telephony.MmsSms.TYPE_DISCRIMINATOR_COLUMN)
+            val addressIndex = cursor.safeColumnIndex(Telephony.TextBasedSmsColumns.ADDRESS)
+            val bodyIndex = cursor.safeColumnIndex(Telephony.TextBasedSmsColumns.BODY)
+            val dateIndex = cursor.safeColumnIndex(Telephony.TextBasedSmsColumns.DATE)
+
+            while (cursor.moveToNext()) {
+                val msgId = cursor.getLong(idIndex)
+                val transport = transportIndex?.let { cursor.getString(it) }.orEmpty()
+                val isMms = transport.equals("mms", ignoreCase = true)
+                val msgType = if (isMms) MessageType.Mms else MessageType.Sms
+
+                // Skip messages already found via the dedicated queries.
+                if ((msgType to msgId) in seenMessages) continue
+                seenMessages += msgType to msgId
+
+                val rawDate = dateIndex?.let { cursor.getLong(it) } ?: continue
+                val receivedAtMillis = if (isMms) rawDate * 1000L else rawDate
+
+                // Re-check date for MMS rows (date stored in seconds can slip
+                // past the ms-based SQL filter).
+                if (receivedAtMillis < (sinceMillis - 1000L)) continue
+
+                val sender = addressIndex?.let { cursor.getString(it) }.orEmpty().ifBlank {
+                    if (isMms) "\u5f69\u4fe1" else "\u77ed\u4fe1"
+                }
+
+                val body: String = if (isMms) {
+                    loadMmsBody(msgId, "")
+                } else {
+                    bodyIndex?.let { cursor.getString(it) }.orEmpty()
+                }
+                if (body.isBlank()) continue
+
+                val contentUri = if (isMms) Telephony.Mms.CONTENT_URI else Telephony.Sms.CONTENT_URI
+
+                appendMatches(
+                    results = results,
+                    messageType = msgType,
+                    messageId = msgId,
+                    messageUri = ContentUris.withAppendedId(contentUri, msgId).toString(),
+                    sender = sender,
+                    body = body,
+                    receivedAtMillis = receivedAtMillis,
+                    rules = rules,
+                    pickedUpKeys = pickedUpKeys,
+                    includePickedUp = includePickedUp,
+                )
+            }
+        }
+
+        return results
+    }
+
+    // ------------------------------------------------------------------
+    // Shared helpers
+    // ------------------------------------------------------------------
 
     private fun appendMatches(
         results: MutableList<PickupCodeItem>,
@@ -268,24 +407,13 @@ class SmsRepository(
 
     companion object {
         private val MMS_PARTS_URI: Uri = Uri.parse("content://mms/part")
+        private val UNIFIED_URI: Uri = Telephony.MmsSms.CONTENT_URI
         private const val MMS_FROM_ADDRESS_TYPE = 137
         private val mediaPrefixes = listOf("image/", "audio/", "video/")
         private val skippedContentTypes = setOf(
             "application/smil",
             "application/octet-stream",
         )
-
-        // SMS type constants (Telephony.TextBasedSmsColumns.TYPE values)
-        private const val SMS_TYPE_SENT = 2
-        private const val SMS_TYPE_DRAFT = 3
-        private const val SMS_TYPE_OUTBOX = 4
-        private const val SMS_TYPE_FAILED = 5
-        private const val SMS_TYPE_QUEUED = 6
-
-        // MMS message box constants (Telephony.BaseMmsColumns.MESSAGE_BOX values)
-        private const val MMS_BOX_SENT = 2
-        private const val MMS_BOX_DRAFTS = 3
-        private const val MMS_BOX_OUTBOX = 4
 
         fun buildUniqueKey(messageType: MessageType, messageId: Long, code: String): String =
             when (messageType) {
@@ -342,9 +470,15 @@ class SmsRepository(
         }
 }
 
+/** Safely get column index, returning null instead of throwing when the column does not exist. */
+private fun Cursor.safeColumnIndex(columnName: String): Int? {
+    val index = getColumnIndex(columnName)
+    return if (index >= 0) index else null
+}
+
 private fun String.compactPreview(maxLength: Int = 78): String {
     val normalized = replace(Regex("""\s+"""), " ").trim()
-    return if (normalized.length <= maxLength) normalized else normalized.take(maxLength - 1) + "…"
+    return if (normalized.length <= maxLength) normalized else normalized.take(maxLength - 1) + "\u2026"
 }
 
 private fun String.normalizePartText(contentType: String): String {

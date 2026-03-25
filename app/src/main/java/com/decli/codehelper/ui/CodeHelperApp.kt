@@ -8,8 +8,13 @@ import android.net.Uri
 import android.provider.Telephony
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -34,6 +39,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -41,7 +47,10 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.ChevronRight
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Rule
+import androidx.compose.material.icons.rounded.WarningAmber
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -50,6 +59,7 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -89,7 +99,9 @@ import com.decli.codehelper.model.CodeFilterWindow
 import com.decli.codehelper.model.PickupCodeItem
 import com.decli.codehelper.ui.home.HomeUiState
 import com.decli.codehelper.ui.home.HomeViewModel
+import com.decli.codehelper.util.MiuiPermissionHelper
 import com.decli.codehelper.ui.theme.AccentBlueContainer
+import com.decli.codehelper.ui.theme.AccentGold
 import com.decli.codehelper.ui.theme.AccentGreen
 import com.decli.codehelper.ui.theme.AccentGreenContainer
 import com.decli.codehelper.ui.theme.AccentTerracotta
@@ -203,6 +215,22 @@ fun CodeHelperApp(
                         onForceRefreshAll = viewModel::forceRefreshAll,
                         onEditRules = { showRuleEditor = true },
                     )
+                }
+
+                item {
+                    val showMiuiHint = uiState.isMiui &&
+                        uiState.hasSmsPermission &&
+                        !uiState.miuiHintDismissed
+                    AnimatedVisibility(
+                        visible = showMiuiHint,
+                        enter = expandVertically() + fadeIn(),
+                        exit = shrinkVertically() + fadeOut(),
+                    ) {
+                        MiuiServiceSmsHint(
+                            context = context,
+                            onDismiss = { viewModel.dismissMiuiHint() },
+                        )
+                    }
                 }
 
                 when {
@@ -909,6 +937,98 @@ private fun RulesEditorSheet(
             }
 
             Spacer(modifier = Modifier.height(18.dp))
+        }
+    }
+}
+
+private val MiuiHintSurface = Color(0xFFFFF8EE)
+private val MiuiHintBorder = Color(0xFFE8C882)
+private val MiuiHintAccent = Color(0xFFB8862D)
+
+@Composable
+private fun MiuiServiceSmsHint(
+    context: Context,
+    onDismiss: () -> Unit,
+) {
+    Card(
+        shape = RoundedCornerShape(18.dp),
+        colors = CardDefaults.cardColors(containerColor = MiuiHintSurface),
+        border = BorderStroke(1.dp, MiuiHintBorder),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 16.dp, end = 8.dp, top = 6.dp, bottom = 14.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.WarningAmber,
+                    contentDescription = null,
+                    modifier = Modifier.size(20.dp),
+                    tint = MiuiHintAccent,
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(
+                    text = "小米手机用户请注意",
+                    modifier = Modifier.weight(1f),
+                    style = androidx.compose.material3.MaterialTheme.typography.titleMedium,
+                    color = Ink,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                IconButton(onClick = onDismiss) {
+                    Icon(
+                        imageVector = Icons.Rounded.Close,
+                        contentDescription = "关闭提示",
+                        modifier = Modifier.size(18.dp),
+                        tint = InkMuted,
+                    )
+                }
+            }
+
+            Text(
+                text = "如果部分取件码（如菜鸟驿站等平台短信）未显示，请开启「通知类短信」权限。小米系统默认关闭该权限，开启后即可正常读取。",
+                modifier = Modifier.padding(end = 8.dp),
+                style = androidx.compose.material3.MaterialTheme.typography.bodyMedium.copy(
+                    lineHeight = 20.sp,
+                ),
+                color = InkMuted,
+            )
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            Button(
+                onClick = {
+                    runCatching {
+                        context.startActivity(
+                            MiuiPermissionHelper.buildPermissionEditorIntent(context)
+                                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                        )
+                    }
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(end = 8.dp),
+                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = AccentGold,
+                    contentColor = Color.White,
+                ),
+                contentPadding = PaddingValues(horizontal = 18.dp, vertical = 12.dp),
+            ) {
+                Text(
+                    text = "前往权限设置",
+                    style = androidx.compose.material3.MaterialTheme.typography.titleMedium,
+                )
+                Spacer(modifier = Modifier.width(4.dp))
+                Icon(
+                    imageVector = Icons.Rounded.ChevronRight,
+                    contentDescription = null,
+                    modifier = Modifier.size(20.dp),
+                )
+            }
         }
     }
 }

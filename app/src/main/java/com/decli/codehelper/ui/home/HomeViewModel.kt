@@ -10,6 +10,7 @@ import com.decli.codehelper.data.SettingsRepository
 import com.decli.codehelper.data.SmsRepository
 import com.decli.codehelper.model.CodeFilterWindow
 import com.decli.codehelper.model.PickupCodeItem
+import com.decli.codehelper.util.MiuiPermissionHelper
 import com.decli.codehelper.util.PickupCodeExtractor
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -36,7 +37,10 @@ class HomeViewModel(
     private val permissionGranted = MutableStateFlow(hasSmsPermission())
     private val reloadNonce = MutableStateFlow(0)
     private val uiStateFlow = MutableStateFlow(
-        HomeUiState(hasSmsPermission = permissionGranted.value),
+        HomeUiState(
+            hasSmsPermission = permissionGranted.value,
+            isMiui = MiuiPermissionHelper.isMiui(),
+        ),
     )
 
     private val messageFlow = MutableSharedFlow<String>(extraBufferCapacity = 8)
@@ -46,6 +50,7 @@ class HomeViewModel(
 
     init {
         observeData()
+        observeMiuiHintDismissed()
     }
 
     fun refreshPermissionStatus() {
@@ -127,6 +132,20 @@ class HomeViewModel(
 
     fun resetRulesToDefault() {
         saveRules(PickupCodeExtractor.defaultRules)
+    }
+
+    fun dismissMiuiHint() {
+        viewModelScope.launch {
+            settingsRepository.dismissMiuiHint()
+        }
+    }
+
+    private fun observeMiuiHintDismissed() {
+        viewModelScope.launch {
+            settingsRepository.miuiHintDismissedFlow.collect { dismissed ->
+                uiStateFlow.update { it.copy(miuiHintDismissed = dismissed) }
+            }
+        }
     }
 
     private fun observeData() {

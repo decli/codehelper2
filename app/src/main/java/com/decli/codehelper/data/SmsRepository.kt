@@ -74,17 +74,20 @@ class SmsRepository(
             Telephony.TextBasedSmsColumns.DATE,
         )
 
-        // Do NOT filter by TYPE \u2013 on some Chinese ROMs, platform messages from
-        // named senders (e.g. \u201c\u83dc\u9e1f\u9a7f\u7ad9\u201d) are stored with NULL or non-standard
-        // type values.  In SQL, `NULL NOT IN (\u2026)` evaluates to UNKNOWN (=FALSE),
-        // so any TYPE-based exclusion silently drops those rows.  Omitting the
-        // filter is safe because the pickup-code regex naturally ignores messages
-        // that do not contain a code (e.g. sent / draft messages).
+        // Include only inbox messages (TYPE = 1) and messages with NULL type.
+        // Platform messages from named senders (e.g. \u201c\u83dc\u9e1f\u9a7f\u7ad9\u201d) on Chinese ROMs
+        // may have NULL type values.  Using `TYPE NOT IN (2,3,...)` would silently
+        // drop those rows because `NULL NOT IN (...)` evaluates to UNKNOWN (=FALSE).
+        // Instead we whitelist inbox + NULL to exclude sent/draft while keeping
+        // platform messages visible.
         contentResolver.query(
             Telephony.Sms.CONTENT_URI,
             projection,
-            "${Telephony.TextBasedSmsColumns.DATE} >= ?",
-            arrayOf(sinceMillis.toString()),
+            "(${Telephony.TextBasedSmsColumns.TYPE} = ? OR ${Telephony.TextBasedSmsColumns.TYPE} IS NULL) AND ${Telephony.TextBasedSmsColumns.DATE} >= ?",
+            arrayOf(
+                Telephony.TextBasedSmsColumns.MESSAGE_TYPE_INBOX.toString(),
+                sinceMillis.toString(),
+            ),
             "${Telephony.TextBasedSmsColumns.DATE} DESC",
         )?.use { cursor ->
             val idIndex = cursor.getColumnIndexOrThrow(BaseColumns._ID)
@@ -139,13 +142,16 @@ class SmsRepository(
         // Inference from AOSP TelephonyProvider/Messaging code: MMS date values are stored in seconds.
         val sinceSeconds = sinceMillis / 1000L
 
-        // Same rationale as SMS \u2013 do not filter by MESSAGE_BOX to avoid dropping
-        // rows with NULL or vendor-specific box values.
+        // Same rationale as SMS: whitelist inbox (MESSAGE_BOX = 1) + NULL to
+        // exclude sent/draft while keeping platform messages with NULL box values.
         contentResolver.query(
             Telephony.Mms.CONTENT_URI,
             projection,
-            "${Telephony.BaseMmsColumns.DATE} >= ?",
-            arrayOf(sinceSeconds.toString()),
+            "(${Telephony.BaseMmsColumns.MESSAGE_BOX} = ? OR ${Telephony.BaseMmsColumns.MESSAGE_BOX} IS NULL) AND ${Telephony.BaseMmsColumns.DATE} >= ?",
+            arrayOf(
+                Telephony.Mms.MESSAGE_BOX_INBOX.toString(),
+                sinceSeconds.toString(),
+            ),
             "${Telephony.BaseMmsColumns.DATE} DESC",
         )?.use { cursor ->
             val idIndex = cursor.getColumnIndexOrThrow(BaseColumns._ID)
@@ -216,6 +222,7 @@ class SmsRepository(
             Telephony.TextBasedSmsColumns.ADDRESS,
             Telephony.TextBasedSmsColumns.BODY,
             Telephony.TextBasedSmsColumns.DATE,
+            Telephony.TextBasedSmsColumns.TYPE,
         )
 
         runCatching {
@@ -232,12 +239,19 @@ class SmsRepository(
             val addressIndex = cursor.safeColumnIndex(Telephony.TextBasedSmsColumns.ADDRESS)
             val bodyIndex = cursor.safeColumnIndex(Telephony.TextBasedSmsColumns.BODY)
             val dateIndex = cursor.safeColumnIndex(Telephony.TextBasedSmsColumns.DATE)
+            val typeIndex = cursor.safeColumnIndex(Telephony.TextBasedSmsColumns.TYPE)
 
             while (cursor.moveToNext()) {
                 val msgId = cursor.getLong(idIndex)
                 val transport = transportIndex?.let { cursor.getString(it) }.orEmpty()
                 val isMms = transport.equals("mms", ignoreCase = true)
                 val msgType = if (isMms) MessageType.Mms else MessageType.Sms
+
+                // Skip sent / draft SMS: only keep inbox (type=1) or NULL.
+                if (!isMms && typeIndex != null) {
+                    val rawType = if (cursor.isNull(typeIndex)) null else cursor.getInt(typeIndex)
+                    if (rawType != null && rawType != Telephony.TextBasedSmsColumns.MESSAGE_TYPE_INBOX) continue
+                }
 
                 // Skip messages already found via the dedicated queries.
                 if ((msgType to msgId) in seenMessages) continue
